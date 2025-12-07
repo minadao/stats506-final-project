@@ -1,0 +1,98 @@
+---
+title: "STATS 506 - Final Project Code"
+author: "Mina Dao"
+format: html
+editor: 
+  markdown: 
+    wrap: 80
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading Packages
+
+```{r, warning = FALSE, message = FALSE}
+library(dplyr)
+library(lme4)
+library(tidyr)
+library(ggplot2)
+library(haven)  
+library(tidyverse)
+```
+
+Read the data
+
+```{r}
+# list all the GSS files 
+gss_files <- list.files(pattern = "GSS.*\\.sav$", 
+                        ignore.case = TRUE, 
+                        full.names = TRUE)
+
+# function to read and standardize each year's data
+read_gss_file <- function(file_path) {
+  year <- str_extract(file_path, "GSS(\\d{4})") %>%
+    str_extract("\\d+") %>%
+    as.numeric()
+  
+  cat("Processing:", file_path, "- Year:", year, "\n")
+  
+  year_data <- read_sav(file_path)
+  
+  # select the variables we need 
+  target_vars <- c("astrosci", "sex", "age", "educ", "relig", "polviews")
+  
+  # check which variables actually exist in this file
+  avail_vars <- target_vars[target_vars %in% names(year_data)]
+  
+  # select available variables and clean
+  year_data <- year_data %>%
+    select(all_of(avail_vars)) %>%
+    mutate(
+      year = year,
+      # convert labelled variables to numeric
+      across(where(is.labelled), as.numeric),
+      # clean `astrosci` variable
+      astrosci = ifelse(astrosci %in% 1:3, astrosci, NA)  
+    )
+  
+  return(year_data)
+}
+
+# read and combine all files
+astrology <- map_dfr(gss_files, read_gss_file)
+
+# remove missing key variables
+astrology <- astrology %>%
+  filter(!is.na(astrosci), !is.na(sex), !is.na(age))
+
+# check the results
+glimpse(astrology)
+
+# verify we have all the years we wanted
+table(astrology$year)
+
+# check sample size by year
+cat("\nSample size by year:\n")
+astrology %>% count(year)
+
+# check distribution of astrology belief
+table(astrology$year, astrology$astrosci, useNA = "always")
+
+# save the combined dataset
+write_csv(astrology, "gss_astrology_2006_2018.csv")
+
+# quick visualization of the trend over years
+astrology %>%
+  count(year, astrosci) %>%
+  group_by(year) %>%
+  mutate(prop = n / sum(n)) %>%
+  filter(astrosci %in% 2:3) %>%  # "Sort of" or "Very" scientific
+  ggplot(aes(x = year, y = prop)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Belief in Astrology Over Time (2006-2018)",
+       y = "Proportion Believing Astrology is Scientific")
+```
+
