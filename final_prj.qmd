@@ -22,15 +22,15 @@ library(haven)
 library(tidyverse)
 ```
 
-Read the data
+Read the data and visualize the proportion
 
-```{r}
+```{r, fig.height=6, fig.width=8}
 # list all the GSS files 
 gss_files <- list.files(pattern = "GSS.*\\.sav$", 
                         ignore.case = TRUE, 
                         full.names = TRUE)
 
-# function to read and standardize each year's data
+# read and standardize each year's data
 read_gss_file <- function(file_path) {
   year <- str_extract(file_path, "GSS(\\d{4})") %>%
     str_extract("\\d+") %>%
@@ -83,16 +83,972 @@ table(astrology$year, astrology$astrosci, useNA = "always")
 # save the combined dataset
 write_csv(astrology, "gss_astrology_2006_2018.csv")
 
-# quick visualization of the trend over years
+
+# 1 = Very scientific (STRONG belief)
+# 2 = Sort of Scientific (belief)
+# 3 = Not at all scientific (NO belief)
+
+# visualization of the trend over years
 astrology %>%
-  count(year, astrosci) %>%
+  mutate(belief = case_when(
+    astrosci == 1 ~ "Very scientific",
+    astrosci == 2 ~ "Sort of scientific", 
+    astrosci == 3 ~ "Not at all scientific"
+  )) %>%
+  mutate(belief = factor(belief,
+                         levels = c("Very scientific",
+                                    "Sort of scientific",
+                                    "Not at all scientific"))) %>%
+  count(year, belief) %>%
   group_by(year) %>%
-  mutate(prop = n / sum(n)) %>%
-  filter(astrosci %in% 2:3) %>%  # "Sort of" or "Very" scientific
-  ggplot(aes(x = year, y = prop)) +
-  geom_line() +
-  geom_point() +
-  labs(title = "Belief in Astrology Over Time (2006-2018)",
-       y = "Proportion Believing Astrology is Scientific")
+  mutate(
+    proportion = n / sum(n),
+    label = paste0(round(proportion * 100, 1), "%")
+  ) %>%
+  ungroup() %>%
+  
+  ggplot(aes(x = factor(year), y = proportion, fill = belief)) +
+    geom_bar(stat = "identity", position = "fill") +
+    geom_text(aes(label = label), 
+              position = position_fill(vjust = 0.5), 
+              size = 3) +
+    scale_y_continuous(labels = scales::percent_format()) +
+    scale_fill_manual(values = c("mediumturquoise", "salmon", "mediumpurple1")) +
+    labs(
+      title = "Distribution of Astrology Belief (2006-2018)",
+      y = "Percentage",
+      x = "Year",
+      fill = "Belief Level"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      legend.position = "bottom"
+    )
 ```
+
+More plots to get insights on whether the trend is different across sex and age groups
+
+```{r, fig.height=6, fig.width=8}
+astrology_analysis <- astrology %>%
+  mutate(
+    age_group = case_when(
+      age >= 18 & age <= 35 ~ "18-35",
+      age >= 36 & age <= 49 ~ "36-49",
+      age >= 50 ~ "50+",
+      TRUE ~ NA_character_
+    ),
+    age_group = factor(age_group, levels = c("18-35", "36-49", "50+")),
+    
+    # transform belief levels into binary (belief or NO belief)
+    belief = ifelse(astrosci %in% 1:2, 1, 0)  
+  )
+
+
+# 1. belief trends by sex over time
+plot1 <- astrology_analysis %>%
+  group_by(year, sex) %>%
+  summarise(
+    proportion = mean(belief, na.rm = TRUE),
+    n = n(),
+    se = sqrt(proportion * (1 - proportion) / n),
+    lower = proportion - 1.96 * se,
+    upper = proportion + 1.96 * se,
+    .groups = "drop"
+  ) %>%
+  
+  # graph
+  ggplot(aes(x = year, y = proportion, 
+             color = factor(sex), group = factor(sex))) +
+    geom_line(linewidth = 1.2) +
+    geom_point(size = 3) +
+    geom_ribbon(aes(ymin = lower, ymax = upper, fill = factor(sex)), 
+                alpha = 0.2, 
+                color = NA) +
+    scale_x_continuous(breaks = seq(2006, 2018, by = 4)) +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+    scale_color_manual(values = c("deepskyblue", "lightpink1"), 
+                       labels = c("Male", "Female")) +
+    scale_fill_manual(values = c("deepskyblue", "lightpink1"), 
+                      labels = c("Male", "Female")) +
+    labs(
+      title = "Astrology Belief Trends by Sex (2006-2018)",
+      subtitle = "With 95% confidence intervals",
+      y = "Percentage Believing",
+      x = "Year",
+      color = "Sex",
+      fill = "Sex"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5),
+      legend.position = "bottom"
+    )
+
+plot1
+
+```
+
+```{r, fig.height=6, fig.width=8}
+
+# 2. belief trends by age group over time
+plot2 <- astrology_analysis %>%
+  filter(!is.na(age_group)) %>%
+  group_by(year, age_group) %>%
+  summarise(
+    proportion = mean(belief, na.rm = TRUE),
+    n = n(),
+    se = sqrt(proportion * (1 - proportion) / n),
+    lower = proportion - 1.96 * se,
+    upper = proportion + 1.96 * se,
+    .groups = "drop"
+  ) %>%
+  
+  # graph
+  ggplot(aes(x = year, y = proportion, 
+             color = factor(age_group), group = factor(age_group))) +
+    geom_line(linewidth = 1.2) +
+    geom_point(size = 3) +
+    geom_ribbon(aes(ymin = lower, ymax = upper, fill = factor(age_group)), 
+                alpha = 0.2, 
+                color = NA) +
+    scale_x_continuous(breaks = seq(2006, 2018, by = 4)) +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+    scale_color_manual(values = c("hotpink", "springgreen2", "steelblue3"), 
+                       labels = c("18-35", "36-49", "50+")) +
+    scale_fill_manual(values = c("hotpink", "springgreen2", "steelblue3"), 
+                      labels = c("18-35", "36-49", "50+")) +
+    labs(
+      title = "Astrology Belief Trends by Sex (2006-2018)",
+      subtitle = "With 95% confidence intervals",
+      y = "Percentage Believing",
+      x = "Year",
+      color = "Age Group",
+      fill = "Age Group"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5),
+      legend.position = "bottom"
+    )
+
+plot2
+
+```
+
+```{r, fig.height=6, fig.width=8}
+# 3. Sex × Age Group trends 
+plot3 <- astrology_analysis %>%
+  filter(!is.na(age_group)) %>%
+  group_by(year, sex, age_group) %>%
+  summarise(
+    proportion = mean(belief, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  filter(n >= 30) %>%  # filter out small cell sizes for reliability
+  
+  ggplot(aes(x = year, y = proportion, 
+             color = interaction(age_group, sex), 
+             linetype = factor(sex),
+             group = interaction(age_group, sex))) +
+    geom_line(linewidth = 1.2) +
+    geom_point(size = 2.5) +
+    scale_x_continuous(breaks = seq(2006, 2018, by = 4)) +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+    scale_color_manual(
+      values = c("hotpink3", "hotpink1", "springgreen3", "springgreen1", "steelblue4", "steelblue1"),
+      labels = c("18-35 Male", "18-35 Female", 
+                 "36-49 Male", "36-49 Female", 
+                 "50+ Male", "50+ Female")
+    ) +
+    scale_linetype_manual(values = c("dotdash", "solid")) +
+    labs(
+      title = "Astrology Belief: Interaction of Sex and Age Group",
+      subtitle = "Dotdashed = Male, Solid = Female",
+      y = "Percentage Believing",
+      x = "Year",
+      color = "Age Group × Sex",
+      linetype = "Sex"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5),
+      legend.position = "bottom",
+      legend.box = "vertical"
+    )
+
+plot3
+
+```
+
+```{r}
+# 4. average belief by sex and age group
+plot4 <- astrology_analysis %>%
+  filter(!is.na(age_group)) %>%
+  group_by(sex, age_group) %>%
+  summarise(
+    proportion = mean(belief, na.rm = TRUE),
+    n = n(),
+    se = sqrt(proportion * (1 - proportion) / n),
+    lower = proportion - 1.96 * se,
+    upper = proportion + 1.96 * se,
+    .groups = "drop"
+  ) %>%
+  
+  ggplot(aes(x = age_group, y = proportion, fill = factor(sex))) +
+    geom_bar(stat = "identity", 
+             position = position_dodge(0.9), 
+             width = 0.75,
+             alpha = 0.85) +
+    geom_errorbar(aes(ymin = lower, ymax = upper), 
+                  position = position_dodge(0.9), 
+                  width = 0.2,
+                  linewidth = 0.6,
+                  color = "gray50") +
+    geom_text(aes(label = paste0(round(proportion * 100, 1), "%")),
+              position = position_dodge(0.9), 
+              vjust = -1.5, 
+              size = 3.2,
+              fontface = "bold") +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1),
+                       limits = c(0, NA),
+                       expand = expansion(mult = c(0, 0.05))) +
+    scale_fill_manual(values = c("deepskyblue", "lightpink1"), 
+                      labels = c("Male", "Female")) +
+    labs(
+      title = "Average Astrology Belief by Sex and Age Group (2006-2018)",
+      subtitle = "Error bars show 95% confidence intervals",
+      y = "Percentage Believing",
+      x = "Age Group",
+      fill = "Sex"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5),
+      legend.position = "top",
+      legend.title = element_text(face = "bold")
+  )
+
+plot4
+```
+
+
+```{r}
+# 5. Year × Age Group × Belief (for pattern spotting)
+plot5 <- astrology_analysis %>%
+  filter(!is.na(age_group)) %>%
+  group_by(year, age_group) %>%
+  summarise(
+    proportion = mean(belief, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  
+  ggplot(aes(x = factor(year), y = age_group, fill = proportion)) +
+    geom_tile(color = "white", linewidth = 0.5) +
+    geom_text(aes(label = paste0(round(proportion * 100, 1), "%")), 
+              color = "white", 
+              fontface = "bold", 
+              size = 3.5) +
+    scale_fill_gradient2(low = "cornflowerblue", mid = "snow", high = "red1",
+                         midpoint = 0.5, 
+                         labels = scales::percent_format()) +
+    labs(
+      title = "Astrology Belief Heatmap: Year × Age Group",
+      subtitle = "Darker red = higher belief percentage",
+      x = "Year",
+      y = "Age Group",
+      fill = "Belief %"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5),
+      axis.text.x = element_text(angle = 45, hjust = 1)
+    )
+
+plot5
+```
+
+
+```{r, fig.height=6, fig.width=8}
+# 6. Sex × Age Group panels over time (comprehensive view)
+plot6 <- astrology_analysis %>%
+  filter(!is.na(age_group)) %>%
+  group_by(year, sex, age_group) %>%
+  summarise(
+    proportion = mean(belief, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  
+  ggplot(aes(x = year, y = proportion)) +
+    geom_line(linewidth = 1.2, color = "dodgerblue3") +
+    geom_point(size = 2, color = "dodgerblue3") +
+    geom_smooth(method = "lm", 
+                se = FALSE, 
+                color = "gold2", 
+                linetype = "dashed") +
+    facet_grid(age_group ~ sex, 
+               labeller = labeller(
+                 sex = c("1" = "Male", "2" = "Female"),
+                 age_group = ~paste("Age:", .)
+               )) +
+    scale_x_continuous(breaks = c(2006, 2012, 2018)) +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+    labs(
+      title = "Astrology Belief Trends: Sex and Age Group Facets",
+      subtitle = "Dashed line shows linear trend",
+      y = "Percentage Believing",
+      x = "Year"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5),
+      strip.text = element_text(face = "bold", size = 10),
+      panel.spacing = unit(1, "lines")
+    )
+
+plot6
+```
+
+## Isolate the effect of time and control for other covariates
+
+```{r}
+library(MASS)
+
+astrology_clean <- astrology %>%
+  mutate(
+    # center year around the mean
+    year_c = year - 2012,
+    
+    # ordinal outcome
+    belief = case_when(
+      astrosci == 1 ~ "Very scientific",
+      astrosci == 2 ~ "Sort of scientific", 
+      astrosci == 3 ~ "Not at all scientific",
+      TRUE ~ NA_character_
+    ),
+    belief = factor(belief,
+                    levels = c("Not at all scientific", 
+                              "Sort of scientific", 
+                              "Very scientific"),
+                    ordered = TRUE),
+    
+    # Age group
+    age_group = case_when(
+      age >= 18 & age <= 35 ~ "18-35",
+      age >= 36 & age <= 49 ~ "36-49",
+      age >= 50 ~ "50+",
+      TRUE ~ NA_character_
+    ),
+    age_group = factor(age_group,
+                      levels = c("18-35", "36-49", "50+")),
+    
+    # other covariates as factors
+    sex = case_when(
+      sex == 1 ~ "Male",
+      sex == 2 ~ "Female"
+    ),
+    sex = factor(sex, levels = c("Male", "Female")),
+    
+    # convert educ
+    educ = as.numeric(educ),
+    educ_z = scale(educ)[,1],
+    
+    # grouping major religious groups
+    relig_group = case_when(
+      # Protestant, Orthodox, Christian, Inter-Nondenominational
+      relig %in% c(1, 10, 11, 13) ~ "Christian",  
+      relig == 2 ~ "Catholic",
+      relig == 3 ~ "Jewish",
+      relig == 4 ~ "None",
+      relig == 5 ~ "Other",  
+      # Buddhism, Hinduism, Muslim, etc.
+      relig %in% c(6, 7, 8, 9, 12) ~ "Other non-Christian",  
+      TRUE ~ NA_character_
+    ),
+    relig_group = factor(relig_group,
+                        levels = c("None",  # non-religious
+                                   "Christian",
+                                   "Catholic", 
+                                   "Jewish",
+                                   "Other religion",
+                                   "Other non-Christian")),
+ 
+    # politics factor
+    polviews = ifelse(polviews > 0, polviews, NA),
+    polviews_numeric = as.numeric(polviews),  # 1-7
+    
+    # center for easier interpretation
+    polviews_centered = polviews_numeric - 4,  # 0 at Moderate
+    
+    # standardize
+    polviews_z = scale(polviews_numeric)
+  ) %>%
+  
+  # remove rows with missing key variables
+  filter(!is.na(age_group) & !is.na(educ) & 
+         !is.na(relig_group) & !is.na(polviews))
+
+# Check sample size
+cat("Final sample size:", nrow(astrology_clean), "\n")
+head(astrology_clean)
+```
+Base model taking year as a continuous variable
+
+```{r}
+library(MASS)
+
+# fit proportional odds model
+base_model <- polr(belief ~ year_c + sex + age_group + educ_z + relig_group + polviews_z,
+                   data = astrology_clean,
+                   Hess = TRUE)  # Hessian needed for p-values
+
+# summary
+summary(base_model)
+
+results_df <- coef(summary(base_model)) %>%
+  as_tibble(rownames = "variable") %>%
+  mutate(p_value = 2 * pnorm(abs(`t value`), lower.tail = FALSE)) %>%
+  
+  # rename columns
+  rename(coefficient = Value,
+         std_error = `Std. Error`,
+         t_value = `t value`) %>%
+  
+  # calculate odds ratios
+  mutate(odds_ratio = exp(coefficient)) %>%
+  
+  # add significance stars
+  mutate(sig = case_when(
+    p_value < 0.001 ~ "***",
+    p_value < 0.01 ~ "**",
+    p_value < 0.05 ~ "*",
+    TRUE ~ ""
+  )) %>%
+  
+  # format for readability
+  mutate(
+    coefficient_fm = sprintf("%.3f", coefficient),
+    odds_ratio_fm = sprintf("%.3f", odds_ratio),
+    std_error_fm = sprintf("%.3f", std_error),
+    t_value_fm = sprintf("%.2f", t_value),
+    p_value_fm = ifelse(p_value < 0.001, 
+                               "< 0.001", 
+                               sprintf("%.3f", p_value))
+  ) %>%
+  # Clean variable names
+  mutate(variable_clean = case_when(
+    variable == "year_c" ~ "Year (centered around 2012)",
+    variable == "sexFemale" ~ "Female (vs Male)",
+    
+    variable == "age_group36-49" ~ "Age 36-49 (vs 18-35)",
+    variable == "age_group50+" ~ "Age 50+ (vs 18-35)",
+    
+    variable == "educ_z" ~ "Education (scaled)",
+    
+    variable == "relig_groupChristian" ~ "Christian (vs None)",
+    variable == "relig_groupCatholic" ~ "Catholic (vs None)",
+    variable == "relig_groupJewish" ~ "Jewish (vs None)",
+    variable == "relig_groupOther non-Christian" ~ "Other non-Christian (vs None)",
+    
+    variable == "polviews_z" ~ "Political Views",
+    TRUE ~ variable
+  )) %>%
+  # Reorder columns
+  dplyr::select(variable_clean, coefficient_fm, odds_ratio_fm,
+                std_error_fm, t_value_fm, p_value_fm, sig)
+
+library(kableExtra)
+kable(results_df, format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+# get threshold coefficients
+thresholds <- base_model$zeta
+names(thresholds) <- c("Not at all|Sort of", "Sort of|Very")
+cat("\nThreshold coefficients (cutpoints):\n")
+print(thresholds)
+
+```
+
+```{r}
+# KEY FINDINGS INTERPRETATION
+cat("\nBASE ORDINAL LOGISTIC REGRESSION MODEL\n\n")
+
+year_change <- NA
+sex_diff <- NA
+educ_change <- NA
+
+# 1. YEAR EFFECT
+year_row <- results_df[results_df$variable_clean == "Year (centered around 2012)", ]  
+if(nrow(year_row) > 0) {
+  year_or <- as.numeric(year_row$odds_ratio_fm)
+  year_p <- year_row$p_value_fm
+  year_change <- (year_or - 1) * 100
+  
+  cat("1. TIME TREND (Year centered at 2012):\n")
+  cat(sprintf("   - For each year away from 2012, odds of stronger belief %s by %.1f%%\n",
+              ifelse(year_change > 0, "increase", "decrease"), 
+              abs(year_change)))
+  cat(sprintf("   - Comparing 2006 to 2018 (12-year span): %.1f%% %s\n",
+              abs((year_or^12 - 1) * 100),
+              ifelse(year_change > 0, "increase", "decrease")))
+  cat(sprintf("   - Odds Ratio (per year) = %.3f, p %s\n\n", year_or, 
+              ifelse(year_p == "< 0.001", year_p, paste("=", year_p))))
+  } else {
+    cat("1. TIME TREND: Year coefficient not found\n\n")
+  }
+
+# 2. GENDER EFFECT
+sex_row <- results_df[results_df$variable_clean == "Female (vs Male)", ]
+if(nrow(sex_row) > 0) {
+  sex_or <- as.numeric(sex_row$odds_ratio_fm)
+  sex_p <- sex_row$p_value_fm
+  sex_diff <- (sex_or - 1) * 100
+  
+  cat("\n2. GENDER DIFFERENCE:\n")
+  cat(sprintf("   - Women have %.1f%% %s odds of stronger astrology belief than men\n",
+              abs(sex_diff), 
+              ifelse(sex_diff > 0, "higher", "lower")))
+  cat(sprintf("   - Odds Ratio = %.3f, p %s\n", 
+              sex_or,
+              ifelse(sex_p == "< 0.001", sex_p, paste("=", sex_p))))
+}
+
+# 3. AGE EFFECTS
+age_rows <- results_df[grepl("Age ", results_df$variable_clean), ]
+if(nrow(age_rows) > 0) {
+  cat("\n3. AGE PATTERNS (compared to 18-35 year olds):\n")
+  
+  for(i in 1:nrow(age_rows)) {
+    age_or <- as.numeric(age_rows$odds_ratio_fm[i])
+    age_p <- age_rows$p_value_fm[i]
+    age_diff <- (age_or - 1) * 100
+    age_group <- gsub("Age | \\(vs 18-35\\)", "", age_rows$variable_clean[i])
+    
+    cat(sprintf("   - %s: %.1f%% %s odds of stronger belief\n",
+                age_group, 
+                abs(age_diff), 
+                ifelse(age_diff > 0, "higher", "lower")))
+    cat(sprintf("     OR = %.3f, p %s\n", 
+                age_or,
+                ifelse(age_p == "< 0.001", age_p, paste("=", age_p))))
+  }
+}
+
+# 4. EDUCATION EFFECT
+educ_row <- results_df[results_df$variable_clean == "Education (years)", ]
+if(nrow(educ_row) > 0) {
+  educ_or <- as.numeric(educ_row$odds_ratio_fm)
+  educ_p <- educ_row$p_value_fm
+  educ_change <- (educ_or - 1) * 100
+  
+  cat("\n4. EDUCATION EFFECT:\n")
+  cat(sprintf("   - Each additional year of education is associated with %.1f%% %s odds of stronger belief\n",
+              abs(educ_change), 
+              ifelse(educ_change > 0, "higher", "lower")))
+  cat(sprintf("   - Odds Ratio = %.3f, p %s\n", 
+              educ_or,
+              ifelse(educ_p == "< 0.001", educ_p, paste("=", educ_p))))
+}
+
+# 5. RELIGION EFFECTS (summarize key patterns)
+relig_rows <- results_df[grepl("Christian|Catholic|Jewish|Other non-Christian", results_df$variable_clean), ]
+if(nrow(relig_rows) > 0) {
+  cat("\n5. RELIGIOUS DIFFERENCES (vs No Religion):\n")
+  
+  # Find strongest effects
+  relig_rows <- relig_rows %>%
+    mutate(odds_numeric = as.numeric(odds_ratio_fm)) %>%
+    arrange(desc(abs(log(odds_numeric))))
+  
+  strongest <- relig_rows[1, ]
+  weakest <- relig_rows[nrow(relig_rows), ]
+  
+  strong_relig <- gsub(" \\(vs None\\)", "", strongest$variable_clean)
+  strong_change <- (strongest$odds_numeric - 1) * 100
+  
+  weak_relig <- gsub(" \\(vs None\\)", "", weakest$variable_clean)
+  weak_change <- (weakest$odds_numeric - 1) * 100
+  
+  cat(sprintf("   - Strongest effect: %s have %.1f%% %s odds\n",
+              strong_relig, 
+              abs(strong_change), 
+              ifelse(strong_change > 0, "higher", "lower")))
+  cat(sprintf("   - Weakest effect: %s have %.1f%% %s odds\n",
+              weak_relig, 
+              abs(weak_change),
+              ifelse(weak_change > 0, "higher", "lower")))
+}
+
+# 6. POLITICAL VIEWS EFFECT
+pol_row <- results_df[results_df$variable_clean == "Political Views", ]
+if(nrow(pol_row) > 0) {
+  pol_or <- as.numeric(pol_row$odds_ratio_fm)
+  pol_p <- pol_row$p_value_fm
+  pol_change <- (pol_or - 1) * 100
+  
+  cat("\n6. POLITICAL VIEWS:\n")
+  cat(sprintf("   • Each standard deviation toward more liberal views is associated with %.1f%% %s odds of stronger belief\n",
+              abs(pol_change), ifelse(pol_change > 0, "higher", "lower")))
+  cat(sprintf("   • Odds Ratio = %.3f, p %s\n", pol_or,
+              ifelse(pol_p == "< 0.001", pol_p, paste("=", pol_p))))
+}
+
+# 7. OVERALL INTERPRETATION OF THRESHOLDS
+cat("\nTHRESHOLD INTERPRETATION \n")
+cat(sprintf("T1 = %.3f: Boundary between 'Not at all scientific' and 'Sort of/Very scientific'\n", 
+            thresholds[1]))
+cat(sprintf("T2 = %.3f: Boundary between 'Not at all/Sort of scientific' and 'Very scientific'\n", 
+            thresholds[2]))
+cat("\n- A positive threshold means the average respondent needs additional 'push' to reach higher belief\n")
+cat("- T2 > T1 indicates it's harder to reach 'Very scientific' than 'Sort of scientific'\n")
+
+# 8. SUMMARY STATEMENT
+cat("\nOVERALL SUMMARY\n")
+cat("From 2006 to 2018, astrology belief in the U.S. showed a significant ")
+cat(ifelse(year_change > 0, "upward ", "downward "))
+cat("trend. Belief was consistently stronger among ")
+cat(ifelse(sex_diff > 0, "women, ", "men, "))
+cat("and ")
+cat(ifelse(as.numeric(age_rows$odds_ratio_fm[1]) < 1, "weaker ", "stronger "))
+cat("among older age groups. Education had a ")
+cat(ifelse(educ_change < 0, "negative ", "positive "))
+cat("association with belief strength.")
+```
+
+Add the interaction term between year and sex to examine the difference in gender gap in belief over time. 
+
+```{r}
+gender_model <- polr(belief ~ year_c * sex + age_group + educ_z + relig_group
+                     + polviews_z,
+                     data = astrology_clean,
+                     Hess = TRUE)
+
+summary(gender_model)
+
+results_df_g <- coef(summary(gender_model)) %>%
+  as_tibble(rownames = "variable") %>%
+  mutate(p_value = 2 * pnorm(abs(`t value`), lower.tail = FALSE)) %>%
+  
+  # rename columns
+  rename(coefficient = Value,
+         std_error = `Std. Error`,
+         t_value = `t value`) %>%
+  
+  # calculate odds ratios
+  mutate(odds_ratio = exp(coefficient)) %>%
+  
+  # add significance stars
+  mutate(sig = case_when(
+    p_value < 0.001 ~ "***",
+    p_value < 0.01 ~ "**",
+    p_value < 0.05 ~ "*",
+    TRUE ~ ""
+  )) %>%
+  
+  # format for readability
+  mutate(
+    coefficient_fm = sprintf("%.3f", coefficient),
+    odds_ratio_fm = sprintf("%.3f", odds_ratio),
+    std_error_fm = sprintf("%.3f", std_error),
+    t_value_fm = sprintf("%.2f", t_value),
+    p_value_fm = ifelse(p_value < 0.001, 
+                               "< 0.001", 
+                               sprintf("%.3f", p_value))
+  ) %>%
+  # Clean variable names
+  mutate(variable_clean = case_when(
+    variable == "year_c" ~ "Year (centered around 2012)",
+    variable == "sexFemale" ~ "Female (vs Male)",
+    variable == "year_c:sexFemale" ~ "Year x Female Interaction",
+    
+    variable == "age_group36-49" ~ "Age 36-49 (vs 18-35)",
+    variable == "age_group50+" ~ "Age 50+ (vs 18-35)",
+    
+    variable == "educ_z" ~ "Education (scaled)",
+    
+    variable == "relig_groupChristian" ~ "Christian (vs None)",
+    variable == "relig_groupCatholic" ~ "Catholic (vs None)",
+    variable == "relig_groupJewish" ~ "Jewish (vs None)",
+    variable == "relig_groupOther non-Christian" ~ "Other non-Christian (vs None)",
+    
+    variable == "polviews_z" ~ "Political Views",
+    TRUE ~ variable
+  )) %>%
+  # Reorder columns
+  dplyr::select(variable_clean, coefficient_fm, odds_ratio_fm,
+                std_error_fm, t_value_fm, p_value_fm, sig)
+
+library(kableExtra)
+kable(results_df_g, format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+
+
+```{r}
+cat("INTERACTION: YEAR × SEX \n\n")
+
+coefs <- coef(gender_model)
+gender_p <- 2 * pnorm(abs(coef(summary(gender_model))["year_c:sexFemale", "t value"]), 
+                           lower.tail = FALSE)
+
+gender_or <- exp(coefs["year_c:sexFemale"])
+gender_change <- (gender_or - 1) * 100
+
+# total 2006-2018 effect
+total_gender <- coefs["year_c:sexFemale"] * 12  # 12 years
+total_gender_or <- exp(total_gender)
+total_gender_change <- (total_gender_or - 1) * 100
+
+# gender-specific yearly trends
+year_effect <- coefs["year_c"]
+male_or <- exp(year_effect)
+male_change <- (male_or - 1) * 100
+
+female_trend <- year_effect + coefs["year_c:sexFemale"]
+female_or <- exp(female_trend)
+female_change <- (female_or - 1) * 100
+
+# print in your style
+cat("1. INTERACTION EFFECT:\n")
+cat(sprintf("   - Each year, the gender gap %s by %.1f%%\n",
+            ifelse(gender_change > 0, "widens", "narrows"),
+            abs(gender_change)))
+cat(sprintf("   - Odds Ratio (per year) = %.3f, p = %s\n\n",
+            gender_or,
+            ifelse(gender_p < 0.001, "<0.001", sprintf("%.3f", gender_p))))
+
+cat("2. TOTAL CHANGE IN GAP (2006-2018):\n")
+cat(sprintf("   - Gender gap %s by %.1f%% over 12 years\n\n",
+            ifelse(total_gender_change > 0, "widened", "narrowed"),
+            abs(total_gender_change)))
+
+cat("3. GENDER-SPECIFIC YEARLY TRENDS:\n")
+cat(sprintf("   - Men: %.1f%% %s per year (OR = %.3f)\n",
+            abs(male_change),
+            ifelse(male_change > 0, "increase", "decrease"),
+            male_or))
+cat(sprintf("   - Women: %.1f%% %s per year (OR = %.3f)\n\n",
+            abs(female_change),
+            ifelse(female_change > 0, "increase", "decrease"),
+            female_or))
+
+cat("4. PRACTICAL INTERPRETATION:\n")
+if(gender_p < 0.05) {
+  if(gender_change > 0) {
+    cat("   - Women's belief is increasing FASTER than men's\n")
+    cat("   - The female-male difference grows larger each year\n")
+  } else {
+    cat("   - Men's belief is increasing FASTER than women's\n")
+    cat("   - The female-male difference grows smaller each year\n")
+  }
+} else {
+  cat("   - Gender gap remains constant over time (no significant change)\n")
+  cat("   - Women consistently believe more, but gap doesn't change\n")
+}
+```
+Add the interaction term between year and sage to examine the difference in gender gap in belief over time. 
+
+```{r}
+age_model <- polr(belief ~ year_c * age_group + sex + educ_z + relig_group
+                  + polviews_z,
+                  data = astrology_clean,
+                  Hess = TRUE)
+
+summary(gender_model)
+
+results_df_a <- coef(summary(age_model)) %>%
+  as_tibble(rownames = "variable") %>%
+  mutate(p_value = 2 * pnorm(abs(`t value`), lower.tail = FALSE)) %>%
+  
+  # rename columns
+  rename(coefficient = Value,
+         std_error = `Std. Error`,
+         t_value = `t value`) %>%
+  
+  # calculate odds ratios
+  mutate(odds_ratio = exp(coefficient)) %>%
+  
+  # add significance stars
+  mutate(sig = case_when(
+    p_value < 0.001 ~ "***",
+    p_value < 0.01 ~ "**",
+    p_value < 0.05 ~ "*",
+    TRUE ~ ""
+  )) %>%
+  
+  # format for readability
+  mutate(
+    coefficient_fm = sprintf("%.3f", coefficient),
+    odds_ratio_fm = sprintf("%.3f", odds_ratio),
+    std_error_fm = sprintf("%.3f", std_error),
+    t_value_fm = sprintf("%.2f", t_value),
+    p_value_fm = ifelse(p_value < 0.001, 
+                               "< 0.001", 
+                               sprintf("%.3f", p_value))
+  ) %>%
+  # Clean variable names
+  mutate(variable_clean = case_when(
+    variable == "year_c" ~ "Year (centered around 2012)",
+    variable == "sexFemale" ~ "Female (vs Male)",
+    variable == "year_c:sexFemale" ~ "Year : Age",
+    
+    variable == "age_group36-49" ~ "Age 36-49 (vs 18-35)",
+    variable == "age_group50+" ~ "Age 50+ (vs 18-35)",
+    
+    variable == "year_c:age_group36-49" ~ "Year × Age 36-49 Interaction",
+    variable == "year_c:age_group50+" ~ "Year × Age 50+ Interaction",
+    
+    variable == "educ_z" ~ "Education (scaled)",
+    variable == "relig_groupChristian" ~ "Christian (vs None)",
+    variable == "relig_groupCatholic" ~ "Catholic (vs None)",
+    variable == "relig_groupJewish" ~ "Jewish (vs None)",
+    variable == "relig_groupOther non-Christian" ~ "Other non-Christian (vs None)",
+    variable == "polviews_z" ~ "Political Views",
+    TRUE ~ variable
+  )) %>%
+  # Reorder columns
+  dplyr::select(variable_clean, coefficient_fm, odds_ratio_fm,
+                std_error_fm, t_value_fm, p_value_fm, sig)
+
+library(kableExtra)
+kable(results_df_a, format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+
+```{r}
+coefs <- coef(age_model)
+year_effect <- coefs["year_c"]
+age36_effect <- coefs["age_group36-49"]
+age50_effect <- coefs["age_group50+"]
+interaction36 <- coefs["year_c:age_group36-49"]
+interaction50 <- coefs["year_c:age_group50+"]
+
+# Calculate p-values
+p_values <- 2 * pnorm(abs(coef(summary(age_model))[, "t value"]), lower.tail = FALSE)
+interaction36_p <- p_values["year_c:age_group36-49"]
+interaction50_p <- p_values["year_c:age_group50+"]
+
+# Calculate odds ratios
+interaction36_or <- exp(interaction36)
+interaction50_or <- exp(interaction50)
+
+# Calculate changes
+change36 <- (interaction36_or - 1) * 100
+change50 <- (interaction50_or - 1) * 100
+
+# Total 12-year changes
+total_interaction36 <- interaction36 * 12
+total_interaction50 <- interaction50 * 12
+total_or36 <- exp(total_interaction36)
+total_or50 <- exp(total_interaction50)
+total_change36 <- (total_or36 - 1) * 100
+total_change50 <- (total_or50 - 1) * 100
+
+# Age-specific yearly trends
+trend_18_35 <- exp(year_effect)  # Reference group
+trend_36_49 <- exp(year_effect + interaction36)
+trend_50_plus <- exp(year_effect + interaction50)
+
+# PRINT INTERPRETATION IN YOUR STYLE
+cat(" YEAR × AGE INTERACTION \n\n")
+
+cat("1. AGE 36-49 vs 18-35 INTERACTION:\n")
+cat(sprintf("   - Each year, the 36-49 vs 18-35 gap %s by %.1f%%\n",
+            ifelse(change36 > 0, "widens", "narrows"),
+            abs(change36)))
+cat(sprintf("   - Odds Ratio (per year) = %.3f, p = %s\n\n",
+            interaction36_or,
+            ifelse(interaction36_p < 0.001, "<0.001", sprintf("%.3f", interaction36_p))))
+
+cat("2. AGE 50+ vs 18-35 INTERACTION:\n")
+cat(sprintf("   - Each year, the 50+ vs 18-35 gap %s by %.1f%%\n",
+            ifelse(change50 > 0, "widens", "narrows"),
+            abs(change50)))
+cat(sprintf("   - Odds Ratio (per year) = %.3f, p = %s\n\n",
+            interaction50_or,
+            ifelse(interaction50_p < 0.001, "<0.001", sprintf("%.3f", interaction50_p))))
+
+cat("3. TOTAL CHANGE IN AGE GAPS (2006-2018):\n")
+cat(sprintf("   - 36-49 vs 18-35 gap: %s by %.1f%% over 12 years\n",
+            ifelse(total_change36 > 0, "widened", "narrowed"),
+            abs(total_change36)))
+cat(sprintf("   - 50+ vs 18-35 gap: %s by %.1f%% over 12 years\n\n",
+            ifelse(total_change50 > 0, "widened", "narrowed"),
+            abs(total_change50)))
+
+cat("4. AGE-SPECIFIC YEARLY TRENDS:\n")
+cat(sprintf("   - 18-35 year olds: %.1f%% %s per year (OR = %.3f)\n",
+            abs((trend_18_35 - 1) * 100),
+            ifelse(trend_18_35 > 1, "increase", "decrease"),
+            trend_18_35))
+cat(sprintf("   - 36-49 year olds: %.1f%% %s per year (OR = %.3f)\n",
+            abs((trend_36_49 - 1) * 100),
+            ifelse(trend_36_49 > 1, "increase", "decrease"),
+            trend_36_49))
+cat(sprintf("   - 50+ year olds: %.1f%% %s per year (OR = %.3f)\n\n",
+            abs((trend_50_plus - 1) * 100),
+            ifelse(trend_50_plus > 1, "increase", "decrease"),
+            trend_50_plus))
+
+cat("5. PRACTICAL INTERPRETATION:\n")
+
+# Interpret each interaction
+if(interaction36_p < 0.05) {
+  if(change36 > 0) {
+    cat("   - 36-49 year olds' belief is increasing FASTER than 18-35 year olds'\n")
+  } else {
+    cat("   - 36-49 year olds' belief is increasing SLOWER than 18-35 year olds'\n")
+  }
+} else {
+  cat("   - 36-49 vs 18-35 gap remains constant (no significant change)\n")
+}
+
+if(interaction50_p < 0.05) {
+  if(change50 > 0) {
+    cat("   - 50+ year olds' belief is increasing FASTER than 18-35 year olds'\n")
+  } else {
+    cat("   - 50+ year olds' belief is increasing SLOWER than 18-35 year olds'\n")
+  }
+} else {
+  cat("   - 50+ vs 18-35 gap remains constant (no significant change)\n")
+}
+
+# Overall pattern
+if(interaction36_p < 0.05 | interaction50_p < 0.05) {
+  cat("\n   - Age differences in astrology belief ARE CHANGING over time\n")
+} else {
+  cat("\n   - Age differences in astrology belief are NOT CHANGING over time\n")
+  cat("   - Younger people consistently believe more, but gap stays the same\n")
+}
+```
+
+
+
+Distribution of source:
+
+1. map() vs. map_dfr() 
+https://stackoverflow.com/questions/66533039/difference-map-vs-map-dfr-in-r
+
+2. paste0()
+https://stackoverflow.com/questions/36279800/difference-between-paste-and-paste0
+
+3. geom_ribbon()
+https://ggplot2.tidyverse.org/reference/geom_ribbon.html
+
+4. polr()
+https://www.rdocumentation.org/packages/MASS/versions/7.3-65/topics/polr
+
+deepseek: help on ggplot2 titles and color palettes
+
 
