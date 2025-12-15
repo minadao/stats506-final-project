@@ -221,7 +221,7 @@ plot2 <- astrology_analysis %>%
     scale_fill_manual(values = c("hotpink", "springgreen2", "steelblue3"), 
                       labels = c("18-35", "36-49", "50+")) +
     labs(
-      title = "Astrology Belief Trends by Sex (2006-2018)",
+      title = "Astrology Belief Trends by Age Groups (2006-2018)",
       subtitle = "With 95% confidence intervals",
       y = "Percentage Believing",
       x = "Year",
@@ -392,7 +392,7 @@ plot6 <- astrology_analysis %>%
     geom_point(size = 2, color = "dodgerblue3") +
     geom_smooth(method = "lm", 
                 se = FALSE, 
-                color = "gold2", 
+                color = "salmon", 
                 linetype = "dashed") +
     facet_grid(age_group ~ sex, 
                labeller = labeller(
@@ -497,7 +497,7 @@ astrology_clean <- astrology %>%
   filter(!is.na(age_group) & !is.na(educ) & 
          !is.na(relig_group) & !is.na(polviews))
 
-# Check sample size
+# check sample size
 cat("Final sample size:", nrow(astrology_clean), "\n")
 head(astrology_clean)
 ```
@@ -544,7 +544,7 @@ results_df <- coef(summary(base_model)) %>%
                                "< 0.001", 
                                sprintf("%.3f", p_value))
   ) %>%
-  # Clean variable names
+  # clean variable names
   mutate(variable_clean = case_when(
     variable == "year_c" ~ "Year (centered around 2012)",
     variable == "sexFemale" ~ "Female (vs Male)",
@@ -562,12 +562,14 @@ results_df <- coef(summary(base_model)) %>%
     variable == "polviews_z" ~ "Political Views",
     TRUE ~ variable
   )) %>%
-  # Reorder columns
+  # reorder columns
   dplyr::select(variable_clean, coefficient_fm, odds_ratio_fm,
                 std_error_fm, t_value_fm, p_value_fm, sig)
 
 library(kableExtra)
-kable(results_df, format = "html") %>%
+kable(results_df, format = "html",
+      col.names = c("Variable", "Coefficient", "Odd Ratio",
+                    "Standard Error", "t-value", "p-value", "Significant")) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
 
 # get threshold coefficients
@@ -579,7 +581,6 @@ print(thresholds)
 ```
 
 ```{r}
-# KEY FINDINGS INTERPRETATION
 cat("\nBASE ORDINAL LOGISTIC REGRESSION MODEL\n\n")
 
 year_change <- NA
@@ -594,7 +595,7 @@ if(nrow(year_row) > 0) {
   year_change <- (year_or - 1) * 100
   
   cat("1. TIME TREND (Year centered at 2012):\n")
-  cat(sprintf("   - For each year away from 2012, odds of stronger belief %s by %.1f%%\n",
+  cat(sprintf("   - For each passing year, odds of stronger belief %s by %.1f%%\n",
               ifelse(year_change > 0, "increase", "decrease"), 
               abs(year_change)))
   cat(sprintf("   - Comparing 2006 to 2018 (12-year span): %.1f%% %s\n",
@@ -644,7 +645,7 @@ if(nrow(age_rows) > 0) {
 }
 
 # 4. EDUCATION EFFECT
-educ_row <- results_df[results_df$variable_clean == "Education (years)", ]
+educ_row <- results_df[results_df$variable_clean == "Education (scaled)", ]
 if(nrow(educ_row) > 0) {
   educ_or <- as.numeric(educ_row$odds_ratio_fm)
   educ_p <- educ_row$p_value_fm
@@ -696,7 +697,7 @@ if(nrow(pol_row) > 0) {
   pol_change <- (pol_or - 1) * 100
   
   cat("\n6. POLITICAL VIEWS:\n")
-  cat(sprintf("   • Each standard deviation toward more liberal views is associated with %.1f%% %s odds of stronger belief\n",
+  cat(sprintf("   • Each standard deviation toward more conservative views is associated with %.1f%% %s odds of stronger belief\n",
               abs(pol_change), ifelse(pol_change > 0, "higher", "lower")))
   cat(sprintf("   • Odds Ratio = %.3f, p %s\n", pol_or,
               ifelse(pol_p == "< 0.001", pol_p, paste("=", pol_p))))
@@ -764,7 +765,7 @@ results_df_g <- coef(summary(gender_model)) %>%
                                "< 0.001", 
                                sprintf("%.3f", p_value))
   ) %>%
-  # Clean variable names
+  # clean variable names
   mutate(variable_clean = case_when(
     variable == "year_c" ~ "Year (centered around 2012)",
     variable == "sexFemale" ~ "Female (vs Male)",
@@ -783,12 +784,14 @@ results_df_g <- coef(summary(gender_model)) %>%
     variable == "polviews_z" ~ "Political Views",
     TRUE ~ variable
   )) %>%
-  # Reorder columns
+  # reorder columns
   dplyr::select(variable_clean, coefficient_fm, odds_ratio_fm,
                 std_error_fm, t_value_fm, p_value_fm, sig)
 
 library(kableExtra)
-kable(results_df_g, format = "html") %>%
+kable(results_df_g, format = "html",
+      col.names = c("Variable", "Coefficient", "Odd Ratio",
+                    "Standard Error", "t-value", "p-value", "Significant")) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
 ```
 
@@ -818,7 +821,7 @@ female_trend <- year_effect + coefs["year_c:sexFemale"]
 female_or <- exp(female_trend)
 female_change <- (female_or - 1) * 100
 
-# print in your style
+
 cat("1. INTERACTION EFFECT:\n")
 cat(sprintf("   - Each year, the gender gap %s by %.1f%%\n",
             ifelse(gender_change > 0, "widens", "narrows"),
@@ -921,7 +924,9 @@ results_df_a <- coef(summary(age_model)) %>%
                 std_error_fm, t_value_fm, p_value_fm, sig)
 
 library(kableExtra)
-kable(results_df_a, format = "html") %>%
+kable(results_df_a, format = "html",
+      col.names = c("Variable", "Coefficient", "Odd Ratio",
+                    "Standard Error", "t-value", "p-value", "Significant"))%>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
 ```
 
@@ -934,20 +939,20 @@ age50_effect <- coefs["age_group50+"]
 interaction36 <- coefs["year_c:age_group36-49"]
 interaction50 <- coefs["year_c:age_group50+"]
 
-# Calculate p-values
+# calculate p-values
 p_values <- 2 * pnorm(abs(coef(summary(age_model))[, "t value"]), lower.tail = FALSE)
 interaction36_p <- p_values["year_c:age_group36-49"]
 interaction50_p <- p_values["year_c:age_group50+"]
 
-# Calculate odds ratios
+# calculate odds ratios
 interaction36_or <- exp(interaction36)
 interaction50_or <- exp(interaction50)
 
-# Calculate changes
+# calculate changes
 change36 <- (interaction36_or - 1) * 100
 change50 <- (interaction50_or - 1) * 100
 
-# Total 12-year changes
+# total 12-year changes
 total_interaction36 <- interaction36 * 12
 total_interaction50 <- interaction50 * 12
 total_or36 <- exp(total_interaction36)
@@ -955,12 +960,11 @@ total_or50 <- exp(total_interaction50)
 total_change36 <- (total_or36 - 1) * 100
 total_change50 <- (total_or50 - 1) * 100
 
-# Age-specific yearly trends
-trend_18_35 <- exp(year_effect)  # Reference group
+# age-specific yearly trends
+trend_18_35 <- exp(year_effect)  # reference group
 trend_36_49 <- exp(year_effect + interaction36)
 trend_50_plus <- exp(year_effect + interaction50)
 
-# PRINT INTERPRETATION IN YOUR STYLE
 cat(" YEAR × AGE INTERACTION \n\n")
 
 cat("1. AGE 36-49 vs 18-35 INTERACTION:\n")
@@ -1003,7 +1007,7 @@ cat(sprintf("   - 50+ year olds: %.1f%% %s per year (OR = %.3f)\n\n",
 
 cat("5. PRACTICAL INTERPRETATION:\n")
 
-# Interpret each interaction
+# interpret each interaction
 if(interaction36_p < 0.05) {
   if(change36 > 0) {
     cat("   - 36-49 year olds' belief is increasing FASTER than 18-35 year olds'\n")
@@ -1024,7 +1028,7 @@ if(interaction50_p < 0.05) {
   cat("   - 50+ vs 18-35 gap remains constant (no significant change)\n")
 }
 
-# Overall pattern
+# overall pattern
 if(interaction36_p < 0.05 | interaction50_p < 0.05) {
   cat("\n   - Age differences in astrology belief ARE CHANGING over time\n")
 } else {
@@ -1049,6 +1053,6 @@ https://ggplot2.tidyverse.org/reference/geom_ribbon.html
 4. polr()
 https://www.rdocumentation.org/packages/MASS/versions/7.3-65/topics/polr
 
-deepseek: help on ggplot2 titles and color palettes
+deepseek: code on ggplot2 facet grid parameters for error bars, text, color palettes, way to print the decimals of the statistics, and way to calculate p-values from scratch
 
 
